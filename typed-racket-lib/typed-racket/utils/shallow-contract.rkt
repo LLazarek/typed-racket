@@ -76,20 +76,20 @@
           #true
           (loop (cdr p?*)))))))
 
-(define (shallow-shape-check val pred ty-str ctx)
-  (blame-map-set! val ty-str ctx)
+(define (shallow-shape-check val pred ty-str ctx from)
+  (blame-map-set! val ty-str from)
   (if (pred val)
     val
     (begin
       (print-blame-map)
-    (raise-shallow-check-error val ty-str ctx))))
+    (raise-shallow-check-error val ty-str ctx from))))
 
-(define (raise-shallow-check-error val ty ctx)
-  (log-transient-info "blame tracing ~a ~a~n" ctx (blame-compress-key* (car ctx)))
+(define (raise-shallow-check-error val ty ctx from)
+  (log-transient-info "blame tracing ~a ~a~n" from (blame-compress-key* (car from)))
   (define boundary*
-    (if (pre-boundary? ctx)
-      (list (pre-boundary->boundary ty ctx))
-      (blame-map-boundary* val (cdr ctx) (blame-compress-key* (car ctx)))))
+    (if (pre-boundary? from)
+      (list (pre-boundary->boundary ty from))
+      (blame-map-boundary* val (cdr from) (blame-compress-key* (car from)))))
   (void
     (let ((num-b (length boundary*)))
       (log-transient-info "blaming ~a boundar~a" num-b (if (= 1 num-b) "y" "ies")))

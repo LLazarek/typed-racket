@@ -8,6 +8,8 @@
 
 (require
   racket/match
+  (only-in typed-racket/env/init-envs
+    type->transient-sexp)
   (only-in racket/format ~a)
   (only-in racket/set set-union)
   (only-in racket/list flatten)
@@ -77,7 +79,7 @@
        ;;  (with-syntax ([t (type->transient-sexp (parse-type #'r.type))])
        ;;    (register-ignored
        ;;      (quasisyntax/loc stx
-       ;;        (#%plain-app void #,(quasisyntax/loc stx (#%plain-app transient-assert r.name r.contract 't r.srcloc r.blame))))))]
+       ;;        (#%plain-app void #,(quasisyntax/loc stx (#%plain-app shallow-shape-check r.name r.contract 't r.srcloc r.blame))))))]
 
         [(let-values ([(meth-id) _meth])
             (let-values ([(obj-id) _rcvr])
@@ -228,7 +230,7 @@
                                                                                                  ((dom (in-list dom*)))
                                                                                          (if (pair? dom) (cons (car dom) acc) acc))))]
                                                                              [(ex* fst+)
-                                                                              (protect-domain-method fst-ty fst (build-source-location-list fst) ctc-cache sc-cache
+                                                                              (protect-domain-method fst-ty fst (build-source-location-list fst) ctc-cache
                                                                                                      ids-to-blame method-name arg-idx)])
                                                                  (void (register-extra-defs! ex*))
                                                                  (if fst+ (cons fst+ check*) check*))))])
@@ -281,7 +283,7 @@
                                                           [(let-values (((arg-id) (~and if-expr (if test default-expr arg)))) f-rest)
                                                            ;; optional, default expression may need defense
                                                            (define arg-ty (tc-results->type1 (type-of #'if-expr)))
-                                                           (define-values [ex* arg+] (protect-method-domain arg-ty #'arg (build-source-location-list f-body) ctc-cache sc-cache (unbox ids-to-blame) method-name arg-idx))
+                                                           (define-values [ex* arg+] (protect-domain-method arg-ty #'arg (build-source-location-list f-body) ctc-cache (unbox ids-to-blame) method-name arg-idx))
                                                            (void (register-extra-defs! ex*))
                                                            (quasisyntax/loc f-body
                                                              (let-values (((arg-id)
@@ -296,7 +298,7 @@
                                                           [(let-values (((arg-id) arg-val)) f-rest)
                                                            ;; normal arg
                                                            (define arg-ty (tc-results->type1 (type-of #'arg-val)))
-                                                           (define-values [ex* arg-val+] (protect-method-domain arg-ty #'arg-val (build-source-location-list f-body) ctc-cache sc-cache (unbox ids-to-blame) method-name arg-idx))
+                                                           (define-values [ex* arg-val+] (protect-domain-method arg-ty #'arg-val (build-source-location-list f-body) ctc-cache (unbox ids-to-blame) method-name arg-idx))
                                                            (void (register-extra-defs! ex*))
                                                            (quasisyntax/loc f-body
                                                              (let-values (((arg-id)
@@ -465,6 +467,7 @@
                             ;; no type
                             (quasisyntax/loc formals [#,formals . #,body])]
                            [else
+                         (define this-formals-len (formals-length formals))
                              (define matching-dom*
                                (let ([len (formals-length formals)])
                                  (for/list ((dom (in-list all-dom*))
@@ -476,7 +479,8 @@
                                           (readd-props (loop body #f trusted-fn*) body)]
                                          [check-formal*
                                            (let protect-loop ([args formals]
-                                                              [dom* matching-dom*])
+                                                              [dom* matching-dom*]
+                                                          [arg-idx 0])
                                              (if (or (identifier? args)
                                                      (null? args)
                                                      (and (syntax? args) (null? (syntax-e args))))
@@ -495,7 +499,7 @@
                                                                     (for/fold ((acc '()))
                                                                               ((dom (in-list dom*)))
                                                                       (if (pair? dom) (cons (cdr dom) acc) acc))))
-                                                                (protect-loop rst dom+))]
+                                                                (protect-loop rst dom+ (+ arg-idx 1)))]
                                                              [(fst-ty)
                                                               (if (type-annotation fst #:infer #f)
                                                                 (get-type fst #:infer #t #:default Univ)
@@ -506,7 +510,7 @@
                                                              [(ex* fst+)
                                                               (if skip-dom?
                                                                 (values '() #f)
-                                                                (protect-domain-case fst-ty fst (build-source-location-list fst) ctc-cache #'f-name arg-idx))])
+                                                                (protect-domain-case fst-ty fst (build-source-location-list fst) ctc-cache #'f-name arg-idx this-formals-len))])
                                                  (void (register-extra-defs! ex*))
                                                  (if fst+ (cons fst+ check*) check*))))])
                                    (if (null? check-formal*)
@@ -858,7 +862,7 @@
               #,(quasisyntax/loc dom-stx (#%plain-app cons lambda-id 'from-datum))))))))
   (values extra-def* dom-stx+))
 
-(define (protect-codomain cod-tc-res app-stx ctx ctc-cache)
+(define (protect-codomain cod-tc-res app-stx ctx ctc-cache #:blame [blame-info #f])
   (define t* (tc-results->type* cod-tc-res))
   (cond
    [(or (not t*) (null? t*))
@@ -941,7 +945,7 @@
                                                [v v-stx]
                                                [ty-datum (type->transient-sexp type)]
                                                [ctx ctx])
-                                   (quasisyntax/loc v-stx (#%plain-app transient-assert v ctc 'ty-datum 'ctx
+                                   (quasisyntax/loc v-stx (#%plain-app shallow-shape-check v ctc 'ty-datum 'ctx
                                                   (#%plain-app cons #,(or blame-id f-id)
                                                                     #,(cond
                                                                         [(eq? blame-sym 'rng)

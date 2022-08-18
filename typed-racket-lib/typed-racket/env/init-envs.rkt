@@ -37,7 +37,13 @@
          initialize-type-env
          type->sexp ; for types/printer.rkt
          object->sexp ; for testing
-         make-env-init-codes)
+         make-env-init-codes
+                  type->transient-sexp
+                  )
+
+(define (type->transient-sexp t)
+  ;;`(let () ,@(make-env-init-codes) ,(type->sexp t))
+  (type->sexp t))
 
 (define-syntax (define-initial-env stx)
   (syntax-parse stx
