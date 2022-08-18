@@ -137,7 +137,7 @@
      [_ #f])]
    [`(rng . ,i)
     (match ty
-     [(Fun: (list (Arrow: _ _ _ (Values: (list (Result: rng* _ _) ...)))))
+     [(Fun: (list (Arrow: _ _ _ (Values: (list (Result: rng* _ _) ...)) _)))
       (list-ref/#f rng* i)]
      [_ #f])]
    ['car

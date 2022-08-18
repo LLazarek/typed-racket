@@ -69,7 +69,11 @@
                                     [name-datum (syntax->datum #'nm.nm)])
                         (case te-mode
                           [(shallow)
-                           #'(#%plain-app shallow-shape-check alt cnt 'orig-ty-str (quote-srcloc nm.nm))]
+                           #'(#%plain-app shallow-shape-check alt cnt 'orig-ty-str (quote-srcloc nm.nm)
+                              (#%plain-app list 'boundary 'require/typed
+                               (#%variable-reference)
+                               'lib
+                               (current-contract-region)))]
                           [(optional)
                            #'alt]
                           [else ; deep #f

@@ -99,7 +99,7 @@
     (exn:fail:contract:blame:transient
       (format
         "shape-check: value does not match expected type\n  value: ~s\n  type: ~s\n  lang: ~s\n  src: ~s"
-        val (unquoted-printing-string ty) 'typed/racket/shallow ctx)
+        val (unquoted-printing-string (format "~a" ty)) 'typed/racket/shallow ctx)
       (current-continuation-marks)
       boundary*)))
 
@@ -135,8 +135,10 @@
       (if (or (path? m)
               (and (pair? m) (path? (car m)))) ;; submod path
         m
-        (let ((mpi (variable-reference->module-path-index (car blame-val))))
-          (resolved-module-path-name (module-path-index-resolve (module-path-index-join m mpi)))))))
+        (with-handlers ((exn:fail:filesystem? (lambda (ex) m)))
+          (let ((mpi (variable-reference->module-path-index (car blame-val))))
+            (resolved-module-path-name (module-path-index-resolve (module-path-index-join m mpi))))
+        ))))
   (make-boundary pos-mod (caddr blame-val) ty))
 
 (define new-timestamp

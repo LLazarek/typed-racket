@@ -473,7 +473,8 @@
                   #,(ignore-some/expr
                       #`(#%plain-app shallow-shape-check
                                      (store-ty-expr v)
-                                     #,new-ty-ctc 'ty-str 'ctx)
+                                     #,new-ty-ctc 'ty-str 'ctx
+                                     (#%plain-app list 'boundary 'cast (#%variable-reference) 'typed-world 'cast))
                       #'ty))]
               [(optional)
                #`(check-ty-expr

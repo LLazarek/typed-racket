@@ -74,13 +74,6 @@
       (syntax-parse stx
         #:literals (#%plain-app #%plain-lambda begin case-lambda define-syntaxes define-values
                     find-method/who let-values letrec-values quote values)
-       ;; [r:transient-require
-       ;; TODO
-       ;;  (with-syntax ([t (type->transient-sexp (parse-type #'r.type))])
-       ;;    (register-ignored
-       ;;      (quasisyntax/loc stx
-       ;;        (#%plain-app void #,(quasisyntax/loc stx (#%plain-app shallow-shape-check r.name r.contract 't r.srcloc r.blame))))))]
-
         [(let-values ([(meth-id) _meth])
             (let-values ([(obj-id) _rcvr])
               (let-values (((_) (#%plain-app find-method/who _ _ _)))
