@@ -59,7 +59,7 @@
        (values
         ;; For the submodule
         (case te-mode
-          ((optional)
+          ((shallow optional)
            (with-syntax ((shallow-ctc-def (contract-def/provide-property
                                               #'(define-values (shallow-ctc) #f)
                                               (list ty #'shallow-id #'id pos-blame-id shallow))))
@@ -70,8 +70,9 @@
         (case te-mode
           ((shallow)
            #`(begin (define-syntax local-untyped-id (#,mk-redirect-id (quote-syntax untyped-id)))
+                    (define-syntax local-shallow-id (#,mk-redirect-id (quote-syntax shallow-id)))
                     (define-syntax export-id
-                      (make-typed-renaming #'local-untyped-id #'id #'id #'id))))
+                      (make-typed-renaming #'local-untyped-id #'local-shallow-id #'id #'local-shallow-id))))
           ((optional)
            #`(begin (define-syntax local-untyped-id (#,mk-redirect-id (quote-syntax untyped-id)))
                     (define-syntax local-shallow-id (#,mk-redirect-id (quote-syntax shallow-id)))

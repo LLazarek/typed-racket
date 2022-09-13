@@ -18,6 +18,7 @@
  "../env/row-constraint-env.rkt"
  "../env/lexical-env.rkt"
  "../env/type-constr-env.rkt"
+ (only-in typed-racket/env/init-envs type->transient-sexp)
 
  "../rep/core-rep.rkt"
  "../rep/rep-utils.rkt"
@@ -188,7 +189,14 @@
                             (list #`(define-values (ctc-id) #,ctc)))
                      (define-module-boundary-contract #,untyped-id
                        #,orig-id
-                       #,(or maybe-inline-val #'ctc-id)
+                       #,(case te-mode
+                          ((deep)
+                           (or maybe-inline-val #'ctc-id))
+                          ((shallow)
+                           (with-syntax ((ty-datum (type->transient-sexp type)))
+                             #'(#%plain-app make-shallow-provide-contract ctc-id 'ty-datum (#%variable-reference))))
+                          (else ;; optional
+                            #'ctc-id))
                        #:pos-source #,blame-id
                        #:srcloc (vector (quote #,(syntax-source orig-id))
                                         #,(syntax-line orig-id)

@@ -13,9 +13,11 @@
   arg-cast
   ;; (-> value from value)
   ;; Apply to function args, records a "cast"
-  )
+
+  make-shallow-provide-contract)
 
 (require
+  (only-in racket/contract blame-positive make-flat-contract)
   racket/lazy-require
   typed-racket/utils/shallow-contract-struct)
 
@@ -102,6 +104,16 @@
         val (unquoted-printing-string (format "~a" ty)) 'typed/racket/shallow ctx)
       (current-continuation-marks)
       boundary*)))
+
+(define (make-shallow-provide-contract pred ty-datum ctx)
+  (define ((lnp blame) val neg-party)
+    (if (eq? neg-party 'incomplete-blame-from-provide.rkt)
+      #true
+      (let ((pos-party (blame-positive blame)))
+        (blame-map-set! val ty-datum (list 'boundary 'provide ctx pos-party neg-party)))))
+  (make-flat-contract
+    #:name (format "transient-projection:~a" (object-name pred))
+    #:late-neg-projection lnp))
 
 ;; -----------------------------------------------------------------------------
 ;; --- blame map
