@@ -197,7 +197,7 @@
                                               (TrueProp:))
                                     (Empty:)))) rng-T+)))
      `(simple-> (list ,@(map type->sexp dom)) ,(type->sexp t) #:T+ ,rng-T+)]
-    [(Fun: (list (Arrow: dom #f'()
+    [(Fun: (list (Arrow: dom #f '()
                          (Values:
                           (list
                            (Result: t
