@@ -179,7 +179,7 @@
                                          (((outer-meth-id)
                                                (#%plain-lambda formals .
                                                 #,(let*
-                                                        ([body+ (readd-props (loop #'body #f) #'body)]
+                                                        ([body+ (readd-props (loop #'body #f trusted-fn*) #'body)]
                                                          [dom* (map Arrow-dom (syntax->arrows #'core-fn))]
                                                          [ids-to-blame
                                                            ;; blame class and the self object
@@ -263,7 +263,7 @@
                                                      (let dom-check-loop ([f-body #'f-body]
                                                                           [arg-idx 0])
                                                        (if (= arg-idx final-idx)
-                                                         (readd-props (loop f-body #f) f-body)
+                                                         (readd-props (loop f-body #f trusted-fn*) f-body)
                                                          (syntax-parse f-body
                                                           #:literals (let-values if)
                                                           [(let-values (((arg-id:id) arg-val:id)) f-rest)
@@ -285,7 +285,7 @@
                                                                                 [((~literal #%expression) ((~literal quote) #f))
                                                                                  #'default-expr]
                                                                                 [_
-                                                                                 (readd-props (loop #'default-expr #f) #'default-expr)])
+                                                                                 (readd-props (loop #'default-expr #f trusted-fn*) #'default-expr)])
                                                                              #,(if arg+ (readd-props arg+ #'arg) #'arg))))
                                                                #,(dom-check-loop #'f-rest (+ arg-idx 1))))]
                                                           [(let-values (((arg-id) arg-val)) f-rest)
