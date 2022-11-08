@@ -23,6 +23,7 @@
   typed-racket/rep/type-rep
   typed-racket/rep/values-rep
   typed-racket/types/abbrev
+  (only-in typed-racket/typecheck/internal-forms transient-require)
   typed-racket/types/match-expanders
   typed-racket/types/resolve
   typed-racket/types/struct-table
@@ -35,6 +36,7 @@
   typed-racket/utils/shallow-utils
   (only-in typed-racket/optimizer/unboxed-let escapes?)
   (only-in typed-racket/private/type-annotation type-annotation get-type)
+  (only-in typed-racket/private/parse-type parse-type)
   (only-in typed-racket/private/syntax-properties
     type-ascription-property
     type-inst-property
@@ -74,6 +76,13 @@
       (syntax-parse stx
         #:literals (#%plain-app #%plain-lambda begin case-lambda define-syntaxes define-values
                     find-method/who let-values letrec-values quote values)
+        [r:transient-require
+         ;; look for requires here, rather than base-env/prims-contract, so we
+         ;; can parse the type (unclear how to parse over there)
+         (with-syntax ([t (type->transient-sexp (parse-type #'r.type))])
+           (register-ignored
+             (quasisyntax/loc stx
+               (#%plain-app void #,(quasisyntax/loc stx (#%plain-app shallow-shape-check r.name r.contract 't r.srcloc r.blame))))))]
         [(let-values ([(meth-id) _meth])
             (let-values ([(obj-id) _rcvr])
               (let-values (((_) (#%plain-app find-method/who _ _ _)))
@@ -872,6 +881,7 @@
     (let ()
       (define var-name 'dyn-cod)
       (define f-id (generate-temporary 't-fun))
+      (define kwarg-send? (box #f))
       (define new-stx
         (quasisyntax/loc app-stx
           (let-values (((#,f-id)
@@ -895,33 +905,59 @@
                                            #,(quasisyntax/loc arg (#%plain-app cons #,blame-id
                                             #,(quasisyntax/loc arg (#%plain-app cons 'object-method-dom
                                              #,(quasisyntax/loc arg (#%plain-app cons #,(cdr blame-sym) '#,i))))))))))))]
-                                 [(let-values (((obj-id) obj-e)
-                                               ((meth-id) meth-e)
-                                               . send-arg*-stx)
-                                    body)
-                                   ;; kwarg `send`
-                                   (quasisyntax/loc app-stx
-                                     (let-values (((obj-id) #,(quasisyntax/loc app-stx obj-e))
-                                                  ((meth-id) #,(quasisyntax/loc app-stx meth-e))
-                                                  .
-                                                  #,(for/list ((send-arg (in-list (syntax->list #'send-arg*-stx)))
-                                                               (i (in-naturals)))
-                                                      (syntax-parse send-arg
-                                                       [((arg-id) arg-e)
-                                                        (quasisyntax/loc send-arg
-                                                          ((arg-id) #,(quasisyntax/loc send-arg (#%plain-app arg-cast arg-e
-                                                                       #,(quasisyntax/loc send-arg (#%plain-app cons #,blame-id
-                                                                        #,(quasisyntax/loc send-arg (#%plain-app cons 'object-method-dom
-                                                                         #,(quasisyntax/loc send-arg (#%plain-app cons #,(cdr blame-sym) '#,i))))))))))]
-                                                       [_
-                                                         (raise-argument-error 'protect-codomain "((id) expr)" send-arg)])))
-                                      body))]
+                                 [(let-values ([(meth-sym-v) meth-sym-e])
+                                     (let-values ([(obj-id) obj-e])
+                                       (let-values (((meth-id) meth-e))
+                                         (let-values send-arg*-stx body))))
+                                  ;; kwarg `send`
+                                  (set-box! kwarg-send? #true)
+                                  (quasisyntax/loc app-stx
+                                    (let-values (((meth-sym-v) meth-sym-e))
+                                      (let-values (((obj-id) obj-e))
+                                        (let-values (((meth-id) meth-e))
+                                          (let-values
+                                            #,(for/list ((send-arg (in-list (syntax->list #'send-arg*-stx)))
+                                                         (i (in-naturals)))
+                                                (syntax-parse send-arg
+                                                 [((arg-id) arg-e)
+                                                  (quasisyntax/loc send-arg
+                                                    ((arg-id) #,(quasisyntax/loc send-arg (#%plain-app arg-cast arg-e
+                                                                 #,(quasisyntax/loc send-arg (#%plain-app cons #,blame-id
+                                                                  #,(quasisyntax/loc send-arg (#%plain-app cons 'object-method-dom
+                                                                   #,(quasisyntax/loc send-arg (#%plain-app cons #,(cdr blame-sym)
+                                                                   '#,i))))))))))]
+                                                 [_
+                                                   (raise-argument-error 'protect-codomain "((id) expr)" send-arg)]))
+                                     body)))))]
                                  [_
                                    (raise-argument-error 'protect-codomain "send application?" app-stx)])]
                                [else
                                 (register-ignored
                                   (update-blame-for-args app-stx (if blame-id #f f-id)))])])
-                (if check-cod?
+                (cond
+                 [(not check-cod?)
+                  #'app+]
+                 [(unbox kwarg-send?)
+                  (syntax-parse #'app+ #:literals (#%plain-app let-values)
+                   [(let-values ([(meth-sym-v) meth-sym-e])
+                       (let-values ([(obj-id) obj-e])
+                         (let-values (((meth-id) meth-e))
+                           (let-values send-arg*-stx body))))
+                    (with-syntax ([ctc (car ctc-stx*)]
+                                  [ty-datum (type->transient-sexp (car t*))]
+                                  [ctx ctx]
+                                  [i 0])
+                      (quasisyntax/loc app-stx
+                                      (let-values ([(meth-sym-v) meth-sym-e])
+                                         (let-values ([(obj-id) obj-e])
+                                           (let-values (((meth-id) meth-e))
+                                             (let-values send-arg*-stx
+                                               (#%plain-app shallow-shape-check body ctc 'ty-datum 'ctx
+                                                  (#%plain-app cons #,blame-id
+                                                                    #,(with-syntax ((blame-sym (car blame-sym))
+                                                                                    (meth-id (cdr blame-sym)))
+                                                                           #`(#%plain-app cons 'blame-sym (#%plain-app cons meth-id 'i)))))))))))])]
+                 [else
                   (with-syntax ([v*
                                  (for/list ([_t (in-list t*)])
                                    (generate-temporary var-name))])
@@ -959,8 +995,8 @@
                                                                            #''datum)]))))))
                                (register-ignored! if-stx)
                                if-stx)
-                             #,(quasisyntax/loc app-stx (#%plain-app values . v*))))))
-                  #'app+)))))
+                             #,(quasisyntax/loc app-stx (#%plain-app values . v*))))))]
+)))))
       (void
         (add-typeof-expr new-stx cod-tc-res)
         (register-ignored! (caddr (syntax-e new-stx))))

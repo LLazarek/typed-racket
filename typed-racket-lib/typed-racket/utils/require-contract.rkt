@@ -5,9 +5,13 @@
 (require racket/contract/region racket/contract/base
          "shallow-contract.rkt"
          syntax/location
+         (only-in (submod typed-racket/typecheck/internal-forms forms) transient-require-internal)
          racket/syntax
          (for-syntax racket/base
-                     syntax/parse))
+                     syntax/parse
+                     syntax/location
+                     (only-in syntax/srcloc build-source-location-list)
+                     (only-in typed-racket/typecheck/internal-forms internal)))
 
 (provide require/contract require/contract-shallow require/contract-optional define-ignored rename-without-provide)
 
@@ -68,13 +72,7 @@
                     #,(with-syntax ([alt (get-alternate #'nm.orig-nm-r)]
                                     [name-datum (syntax->datum #'nm.nm)])
                         (case te-mode
-                          [(shallow)
-                           #'(#%plain-app shallow-shape-check alt cnt 'orig-ty-str (quote-srcloc nm.nm)
-                              (#%plain-app list 'boundary 'require/typed
-                               (#%variable-reference)
-                               'lib
-                               (current-contract-region)))]
-                          [(optional)
+                          [(optional shallow)
                            #'alt]
                           [else ; deep #f
                            #'(contract cnt
@@ -82,7 +80,21 @@
                                        '(interface for name-datum)
                                        (current-contract-region)
                                        (quote nm.nm)
-                                       (quote-srcloc nm.nm))]))))]))
+                                       (quote-srcloc nm.nm))])))
+                  #,(when (eq? 'shallow te-mode)
+                      ;; transient later turns this to an assert,
+                      ;; can't assert now because type->sexp isn't ready
+                      (internal
+                        #`(transient-require-internal
+                            #,(get-alternate #'nm.orig-nm-r)
+                            cnt
+                            orig-ty-str
+                            '#,(build-source-location-list #'nm.nm)
+                            (#%plain-app
+                             list 'boundary 'require/typed
+                             (#%variable-reference)
+                             'lib
+                             (current-contract-region))))))]))
 
     (values
       (make-require/contract 'deep)

@@ -91,7 +91,7 @@
       [else
         v])))
 
-;; elim : blame-source? (see transient-contract.rkt)
+;; elim : blame-source? (see shallow-contract.rkt)
 (define (type-step ty elim)
   ;; NOTE the "Top" types should never happen,
   ;;  or anything else that returns Any / Univ

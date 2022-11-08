@@ -176,6 +176,7 @@
 ;; of loading by not having them when they are unneeded
 (lazy-require ["../rep/type-rep.rkt" (Error?)]
               ["../types/utils.rkt" (fv)]
+              [typed-racket/env/init-envs (type->transient-sexp)]
               [typed-racket/private/parse-type (parse-type)])
 
 (define (with-type* expr ty)
@@ -307,7 +308,7 @@
                          (list #'(define-syntaxes (hidden) (values)))
                          null)
                   #,(internal #'(require/typed-internal hidden ty . sm))
-                  #,(ignore #`(r/c/te-mode nm.spec hidden #,cnt* lib #,(format "~a" (syntax->datum #'ty))))))]
+                  #,(ignore #`(r/c/te-mode nm.spec hidden #,cnt* lib #,(stx->ty #'ty)))))]
              [else
               (define/with-syntax hidden2 (generate-temporary #'nm.nm))
               (quasisyntax/loc stx
@@ -466,7 +467,7 @@
             (define/with-syntax store-ty-expr (casted-expr-property #'#%expression store-existing-type))
             (case te-mode
               [(shallow)
-               (define/with-syntax ty-str (format "~a" (syntax->datum #'ty))) ;;bg better to parse-type ?
+               (define/with-syntax ty-str (stx->ty #'ty)) ;;bg better to parse-type ?
                ;; (printf "damn ~a ~s ~a~n" (syntax-line stx) stx (build-source-location-list stx))
                (define/with-syntax ctx (build-source-location-list stx))
                #`(check-ty-expr
@@ -505,6 +506,12 @@
                       existing-ty-ctc 'typed-world 'cast)
                      new-ty-ctc 'cast 'typed-world))])])]))
     (values (cc-maker deep) (cc-maker shallow) (cc-maker optional))))
+
+(define (stx->ty stx)
+  stx #;(syntax->datum stx)
+  #;(format "~a" (syntax->datum stx))
+  #;(with-handlers ((exn:fail? (lambda (_x) (format "~a" (syntax->datum stx)))))
+    (type->transient-sexp (parse-type stx))))
 
 (define-values [require/opaque-type require/opaque-type-shallow require/opaque-type-optional]
   (let ()
