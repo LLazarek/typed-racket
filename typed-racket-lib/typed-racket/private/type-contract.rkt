@@ -165,7 +165,7 @@
                     #:typed-side (if (eq? 'deep (current-type-enforcement-mode)) #t 'both)
                     #:kind 'impersonator
                     #:cache cache
-                    #:enforcement-mode te-mode
+                    #:enforcement-mode (current-type-enforcement-mode) #;te-mode
                     ;; FIXME: get rid of this interface, make it functional
                     (λ (#:reason [reason #f]) (set! failure-reason reason))))
   (syntax-parse stx
