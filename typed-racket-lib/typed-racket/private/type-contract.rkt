@@ -162,10 +162,10 @@
   (define failure-reason #f)
   (define result
     (type->contract type
-                    #:typed-side (if (eq? 'deep (current-type-enforcement-mode)) #t 'both)
+                    #:typed-side (if (eq? deep (current-type-enforcement-mode)) #t 'both)
                     #:kind 'impersonator
                     #:cache cache
-                    #:enforcement-mode (current-type-enforcement-mode) #;te-mode
+                    #:enforcement-mode te-mode
                     ;; FIXME: get rid of this interface, make it functional
                     (λ (#:reason [reason #f]) (set! failure-reason reason))))
   (syntax-parse stx
@@ -351,7 +351,7 @@
       (if (eq? typed-side 'both)
         (values #f #f)
         (values typed-side (not typed-side))))
-    (instantiate/optimize sc fail kind
+    (instantiate/optimize sc fail kind te-mode
       #:cache cache
       #:trusted-positive trust-pos?
       #:trusted-negative trust-neg?)))
@@ -462,16 +462,16 @@
        [(Name: name-id args #f)
         (cond [;; recursive references are looked up in a special table
                ;; that's handled differently by sc instantiation
-               (lookup-name-sc type typed-side)]
+               (lookup-name-sc/deep type typed-side)]
               [else
                (define rv recursive-values)
                ;; FIXME: need special treatment for type constructors
                (define resolved-name (resolve-once type))
-               (register-name-sc type
-                                 (λ () (loop resolved-name 'untyped rv))
-                                 (λ () (loop resolved-name 'typed rv))
-                                 (λ () (loop resolved-name 'both rv)))
-               (lookup-name-sc type typed-side)])]
+               (register-name-sc/deep type
+                                      (λ () (loop resolved-name 'untyped rv))
+                                      (λ () (loop resolved-name 'typed rv))
+                                      (λ () (loop resolved-name 'both rv)))
+               (lookup-name-sc/deep type typed-side)])]
        ;; Ordinary type applications or struct type names, just resolve
        [(or (App: _ _) (Name/struct:)) (t->sc (resolve-once type))]
        [(Univ:) (only-untyped any/sc)]
@@ -676,15 +676,15 @@
        ;; wrong thing for object types since it errors too eagerly.
        [(Instance: (? Name? t))
         #:when (Class? (resolve-once t))
-        (cond [(lookup-name-sc type typed-side)]
+        (cond [(lookup-name-sc/deep type typed-side)]
               [else
                (define rv recursive-values)
                (define resolved (make-Instance (resolve-once t)))
-               (register-name-sc type
-                                 (λ () (loop resolved 'untyped rv))
-                                 (λ () (loop resolved 'typed rv))
-                                 (λ () (loop resolved 'both rv)))
-               (lookup-name-sc type typed-side)])]
+               (register-name-sc/deep type
+                                      (λ () (loop resolved 'untyped rv))
+                                      (λ () (loop resolved 'typed rv))
+                                      (λ () (loop resolved 'both rv)))
+               (lookup-name-sc/deep type typed-side)])]
        [(Instance: (Class: _ _ fields methods _ _))
         (match-define (list (list field-names field-types) ...) fields)
         (match-define (list (list public-names public-types) ...) methods)
@@ -850,14 +850,12 @@
     (match type
      ;; Implicit recursive aliases
      [(Name: _name-id _args #f)
-      (cond [(lookup-name-sc type 'both) ]
+      (cond [(lookup-name-sc/shallow type) ]
             [else
              (define resolved-name (resolve-once type))
-             (register-name-sc type
-                               (λ () (t->sc resolved-name bound-all-vars))
-                               (λ () (t->sc resolved-name bound-all-vars))
-                               (λ () (t->sc resolved-name bound-all-vars)))
-             (lookup-name-sc type 'both)])]
+             (define (f-resolve) (t->sc resolved-name bound-all-vars))
+             (register-name-sc/shallow type f-resolve)
+             (lookup-name-sc/shallow type)])]
      ;; Ordinary type applications or struct type names, just resolve
      [(or (App: _ _)
           (Name/struct:))
@@ -998,14 +996,12 @@
       (t->sc b bound-all-vars)]
      [(Instance: (? Name? t))
       #:when (Class? (resolve-once t))
-      (cond [(lookup-name-sc type 'both)]
+      (cond [(lookup-name-sc/shallow type)]
             [else
              (define resolved (make-Instance (resolve-once t)))
-             (register-name-sc type
-                               (λ () (t->sc resolved bound-all-vars))
-                               (λ () (t->sc resolved bound-all-vars))
-                               (λ () (t->sc resolved bound-all-vars)))
-             (lookup-name-sc type 'both)])]
+             (define (resolve-fn) (t->sc resolved bound-all-vars))
+             (register-name-sc/shallow type resolve-fn)
+             (lookup-name-sc/shallow type)])]
      [(Instance: (Class: _ _ fields methods _ _))
       (make-object-shape/sc (map car fields) (map car methods))]
      [(Class: row-var inits fields publics augments _)
@@ -1054,6 +1050,18 @@
       future?/sc]
      [_
       (raise-arguments-error 'type->static-contract/shallow "contract generation not supported for this type" "type" type "original" orig-type)])))
+
+(define (lookup-name-sc/deep type typed-side)
+  (lookup-name-sc type typed-side deep))
+
+(define (lookup-name-sc/shallow type)
+  (lookup-name-sc type 'both shallow))
+
+(define (register-name-sc/deep type untyped-fn typed-fn both-fn)
+  (register-name-sc type deep untyped-fn typed-fn both-fn))
+
+(define (register-name-sc/shallow type fn)
+  (register-name-sc type shallow fn fn fn))
 
 (define (remove-overlap sc* pattern*)
   (for/fold ((acc sc*))

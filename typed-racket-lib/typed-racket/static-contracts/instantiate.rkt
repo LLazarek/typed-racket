@@ -4,6 +4,7 @@
 
 (require
   "../utils/utils.rkt"
+  "../utils/tc-utils.rkt"
   racket/match
   racket/list
   racket/contract
@@ -26,11 +27,11 @@
 (provide/cond-contract
  [instantiate/optimize
      (parametric->/c (a) ((static-contract? (-> #:reason (or/c #f string?) a))
-                          (contract-kind? #:cache (or/c #f hash?) #:trusted-positive boolean? #:trusted-negative boolean?)
+                          (contract-kind? type-enforcement-mode? #:cache (or/c #f hash?) #:trusted-positive boolean? #:trusted-negative boolean?)
                           . ->* . (or/c a (list/c (listof syntax?) syntax?))))]
  [instantiate
      (parametric->/c (a) ((static-contract? (-> #:reason (or/c #f string?) a))
-                          (contract-kind? #:cache (or/c #f hash?) #:recursive-kinds (or/c hash? #f))
+                          (contract-kind? type-enforcement-mode? #:cache (or/c #f hash?) #:recursive-kinds (or/c hash? #f))
                           . ->* . (or/c a (list/c (listof syntax?) syntax?))))]
  [should-inline-contract? (-> syntax? boolean?)])
 
@@ -40,7 +41,7 @@
            compute-recursive-kinds
            instantiate/inner))
 
-(define (instantiate/optimize sc fail [kind 'impersonator] #:cache [cache #f] #:trusted-positive [trusted-positive #f] #:trusted-negative [trusted-negative #f])
+(define (instantiate/optimize sc fail [kind 'impersonator] [te-mode (current-type-enforcement-mode)] #:cache [cache #f] #:trusted-positive [trusted-positive #f] #:trusted-negative [trusted-negative #f])
   (define recursive-kinds
     (with-handlers [(exn:fail:constraint-failure?
                     (lambda (exn)
@@ -52,9 +53,9 @@
                       ;;  and at that point maybe we can fail here. -- Ben G.
                       #f))]
       (compute-recursive-kinds
-        (contract-restrict-recursive-values (compute-constraints sc kind)))))
+        (contract-restrict-recursive-values (compute-constraints sc kind te-mode)))))
   (define sc/opt (optimize sc #:trusted-positive trusted-positive #:trusted-negative trusted-negative #:recursive-kinds recursive-kinds))
-  (instantiate sc/opt fail kind #:cache cache #:recursive-kinds recursive-kinds))
+  (instantiate sc/opt fail kind te-mode #:cache cache #:recursive-kinds recursive-kinds))
 
 ;; kind is the greatest kind of contract that is supported, if a greater kind would be produced the
 ;; fail procedure is called.
@@ -62,12 +63,12 @@
 ;; The cache is used to share contract definitions across multiple calls to
 ;; type->contract in a given contract fixup pass. If it's #f then that means don't
 ;; do any sharing (useful for testing).
-(define (instantiate sc fail [kind 'impersonator] #:cache [cache #f] #:recursive-kinds [recursive-kinds #f])
+(define (instantiate sc fail [kind 'impersonator] [te-mode (current-type-enforcement-mode)] #:cache [cache #f] #:recursive-kinds [recursive-kinds #f])
   (if (parametric-check sc)
       (fail #:reason "multiple parametric contracts are not supported")
       (with-handlers [(exn:fail:constraint-failure?
                         (lambda (exn) (fail #:reason (exn:fail:constraint-failure-reason exn))))]
-        (instantiate/inner sc
+        (instantiate/inner sc te-mode
           (or recursive-kinds
               (compute-recursive-kinds
                 (contract-restrict-recursive-values (compute-constraints sc kind))))
@@ -77,8 +78,8 @@
 ;; `(get-all-name-defs)` is not what we want directly, since it also includes
 ;; definitions that were optimized away
 ;; we restrict it to only variables bound in `sc`
-(define (compute-defs sc)
-  (define all-name-defs (get-all-name-defs))
+(define (compute-defs sc te-mode)
+  (define all-name-defs (get-all-name-defs te-mode))
   ;; all-name-defs maps lists of ids to defs
   ;; we want to match if any id in the list matches
   (define (ref b) (for/first ([k/v (in-list all-name-defs)]
@@ -106,9 +107,9 @@
               #:when v)
     (values (car v) (cdr v))))
 
-(define (compute-constraints sc max-kind)
+(define (compute-constraints sc max-kind te-mode)
   (define memo-table (make-hash))
-  (define name-defs (compute-defs sc))
+  (define name-defs (compute-defs sc te-mode))
   (define (recur sc)
     (cond [(hash-ref memo-table sc #f)]
           [else
@@ -154,7 +155,7 @@
     (values name (hash-ref var-values var))))
 
 
-(define (instantiate/inner sc recursive-kinds cache)
+(define (instantiate/inner sc te-mode recursive-kinds cache)
   (define bound-names (make-parameter null))
   ;; sc-queue : records the order in which to return syntax objects
   (define sc-queue null)
@@ -211,7 +212,7 @@
       [(? sc? sc)
        (sc->contract sc recur)]))
   (define ctc (recur sc #t))
-  (define name-defs (compute-defs sc))
+  (define name-defs (compute-defs sc te-mode))
   ;; These are extra contract definitions for the name static contracts
   ;; that are used for this type. Since these are shared across multiple
   ;; contracts from a single contract fixup pass, we use the name-defined

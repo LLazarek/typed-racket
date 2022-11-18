@@ -10,6 +10,7 @@
 ;; static contracts.
 
 (require "../../utils/utils.rkt"
+         "../../utils/tc-utils.rkt"
          "../structures.rkt"
          "../constraints.rkt"
          "../../rep/type-rep.rkt" ; only for contract
@@ -27,19 +28,27 @@
 
 (provide/cond-contract
  [get-all-name-defs
-  (-> (listof (list/c (listof identifier?)
+  (-> type-enforcement-mode?
+      (listof (list/c (listof identifier?)
                       static-contract?
                       static-contract?
                       static-contract?)))]
- [lookup-name-sc (-> Type? symbol? (or/c #f static-contract?))]
- [register-name-sc (-> Type?
+ [lookup-name-sc (-> Type? symbol? type-enforcement-mode? (or/c #f static-contract?))]
+ [register-name-sc (-> Type? type-enforcement-mode?
                        (-> static-contract?)
                        (-> static-contract?)
                        (-> static-contract?)
                        any)])
 
-(define name-sc-table (make-parameter (make-hash)))
+(define name-sc-table/deep (make-parameter (make-hash)))
+(define name-sc-table/shallow (make-parameter (make-hash)))
 (define name-defs-table (make-parameter (make-hash)))
+
+(define (name-sc-table te-mode)
+  (case te-mode
+   [(deep) (name-sc-table/deep)]
+   [(shallow) (name-sc-table/shallow)]
+   [else (raise-argument-error 'name-sc-table "(or/c 'deep 'shallow)" te-mode)]))
 
 ;; Use this table to track whether a contract has already been
 ;; generated for this name type yet. Stores booleans.
@@ -54,20 +63,22 @@
   (free-id-table-set! (name-defined-table) name #t))
 
 (define-syntax-rule (with-new-name-tables e)
-  (parameterize ([name-sc-table (make-hash)]
+  (parameterize ([name-sc-table/deep (make-hash)]
+                 [name-sc-table/shallow (make-hash)]
                  [name-defs-table (make-hash)]
                  [name-defined-table (make-free-id-table)])
     e))
 
-(define (get-all-name-defs)
-  (define name-scs (name-sc-table))
-  (for/list ([(type defs) (in-hash (name-defs-table))])
-    (define scs (hash-ref name-scs type))
+(define (get-all-name-defs te-mode)
+  (define name-scs (name-sc-table te-mode))
+  (for*/list ([(type defs) (in-hash (name-defs-table))]
+              [scs (in-value (hash-ref name-scs type #f))]
+              #:when scs)
     (define gen-names (map name-combinator-gen-name scs))
     (cons gen-names defs)))
 
-(define (lookup-name-sc type typed-side)
-  (define result (hash-ref (name-sc-table) type #f))
+(define (lookup-name-sc type typed-side te-mode)
+  (define result (hash-ref (name-sc-table te-mode) type #f))
   (and result
        (case typed-side
          [(both)    (car result)]
@@ -75,12 +86,12 @@
          [(untyped) (caddr result)]
          [else (raise-argument-error 'lookup-name-sc "side?" typed-side)])))
 
-(define (register-name-sc type typed-thunk untyped-thunk both-thunk)
+(define (register-name-sc type te-mode typed-thunk untyped-thunk both-thunk)
   (define-values (typed-name untyped-name both-name)
     (values (generate-temporary)
             (generate-temporary)
             (generate-temporary)))
-  (hash-set! (name-sc-table)
+  (hash-set! (name-sc-table te-mode)
              type
              (list (name-combinator null typed-name)
                    (name-combinator null untyped-name)
