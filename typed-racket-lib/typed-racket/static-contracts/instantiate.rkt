@@ -71,7 +71,7 @@
         (instantiate/inner sc te-mode
           (or recursive-kinds
               (compute-recursive-kinds
-                (contract-restrict-recursive-values (compute-constraints sc kind))))
+                (contract-restrict-recursive-values (compute-constraints sc kind te-mode))))
           cache))))
 
 ;; computes the definitions that are in / used by `sc`

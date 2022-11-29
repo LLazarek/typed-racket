@@ -48,7 +48,8 @@
   (case te-mode
    [(deep) (name-sc-table/deep)]
    [(shallow) (name-sc-table/shallow)]
-   [else (raise-argument-error 'name-sc-table "(or/c 'deep 'shallow)" te-mode)]))
+   [(optional) (hash)]
+   [else (raise-argument-error 'name-sc-table "(or/c 'deep 'shallow 'optional)" te-mode)]))
 
 ;; Use this table to track whether a contract has already been
 ;; generated for this name type yet. Stores booleans.
