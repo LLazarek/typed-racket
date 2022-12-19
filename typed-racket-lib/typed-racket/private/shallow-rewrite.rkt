@@ -186,7 +186,7 @@
                                      (#%plain-app chaperone-procedure
                                        (let-values
                                          (((outer-meth-id)
-                                               (#%plain-lambda formals .
+                                               #,(quasisyntax/loc val (#%plain-lambda formals .
                                                 #,(let*
                                                         ([body+ (readd-props (loop #'body #f trusted-fn*) #'body)]
                                                          [dom* (map Arrow-dom (syntax->arrows #'core-fn))]
@@ -241,7 +241,7 @@
                                                       (cons
                                                         ;; drop "self" check
                                                         (quasisyntax/loc #'body (#%plain-app void . #,(cdr check-formal*)))
-                                                        body+))))))
+                                                        body+)))))))
                                          outer-wrap-e)
                                        . rest))
                                    val)]
