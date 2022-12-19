@@ -60,7 +60,7 @@
     (only-in racket/unsafe/undefined unsafe-undefined)
     typed-racket/types/numeric-predicates
     typed-racket/utils/shallow-contract
-    (only-in racket/private/class-internal find-method/who)
+    (only-in racket/private/class-internal find-method/who get-field/proc)
     (only-in typed-racket/private/class-literals class-internal)))
 
 ;; =============================================================================
