@@ -48,6 +48,7 @@
     opt-lambda-property
     kw-lambda-property
     tr:class:def-property
+    tr:class:local-table-property
     tr:class:name-table-property)
   (only-in (submod typed-racket/private/type-contract test-exports)
     type->contract)
@@ -62,6 +63,8 @@
     typed-racket/utils/shallow-contract
     (only-in racket/private/class-internal find-method/who get-field/proc)
     (only-in typed-racket/private/class-literals class-internal)))
+
+(define current-field-accessor* (make-parameter '()))
 
 ;; =============================================================================
 
@@ -114,54 +117,26 @@
            (let ([name* (hash-ref parse-info 'private-names)])
              (lambda (name-stx)
                (memq (syntax-e name-stx) name*))))
-         #;(register-ignored
-           (readd-props
-             (quasisyntax/loc stx
-               (#%plain-app compose-class name superclass interface internal ...
-                #,(readd-props
-                    #`(#%plain-lambda (local-accessor local-mutator local-method-or-field ...)
-                        #,(let shallow-rewrite-method-def ([val #'make-methods-body])
-                            (cond
-                              [(pair? val)
-                               (cons (shallow-rewrite-method-def (car val)) (shallow-rewrite-method-def (cdr val)))]
-                              [(not (syntax? val))
-                               val]
-                              [(let ((name (tr:class:def-property val)))
-                                 (and name
-                                      (or (public-method-name? name)
-                                          (private-method-name? name))
-                                      name))
-                               => (lambda (val-name)
-                                    (syntax-parse val
-                                     [((~literal #%plain-app)
-                                       (~literal chaperone-procedure)
-                                       ((~literal let-values) ((meth-id meth-fun)) let-body) . rest)
-                                      ;; TODO custom defense here, avoid checking 1st arg to method? ... for keywords, meth-fun is not an immediate lambda
-                                      (readd-props
-                                        (quasisyntax/loc val
-                                          (#%plain-app chaperone-procedure
-                                            (let-values ((meth-id #,(loop #'meth-fun (private-method-name? val-name) trusted-fn*))) let-body) . rest))
-                                        val)]
-                                     [_
-                                       (raise-argument-error 'shallow-rewrite-method-def "tr:class:def-property #t" val)]))]
-                              [else
-                               (define v (syntax-e val))
-                               (if (pair? v)
-                                 (readd-props
-                                   (datum->syntax val (cons (shallow-rewrite-method-def (car v)) (shallow-rewrite-method-def (cdr v))))
-                                   val)
-                                 val)])))
-                    #'make-methods-lambda)
-                 (quote b) (quote #f)))
-             stx))
-        ;; TODO use some combo of olde (below) and new (above) ?
-
+         (define field-accessor*
+           ;; TODO 2022-12-30 could use the fields directly, right?
+           (let ()
+             (define locals (trawl-for-property #'make-methods-body tr:class:local-table-property))
+             (define-values (local-method-table local-private-table local-field-table
+                             local-private-field-table local-init-table
+                             local-init-rest-table
+                             local-inherit-table local-inherit-field-table
+                             local-super-table
+                             local-augment-table local-inner-table)
+               (construct-local-mapping-tables (car locals)))
+             (for/list ([name-acc-mut (in-list local-field-table)])
+               (cons (cadr name-acc-mut) (car name-acc-mut)))))
          (register-ignored
            (readd-props
              (quasisyntax/loc stx
               (letrec-values (((outer-class-name)
                (#%plain-app compose-class name superclass interface internal ...
-                #,(readd-props
+                #,(parameterize ([current-field-accessor* (append field-accessor* (current-field-accessor*))])
+                   (readd-props
                     (quasisyntax/loc #'make-methods-lambda (#%plain-lambda (local-accessor local-mutator local-method-or-field ...)
                         #,(let defend-method-def ([val #'make-methods-body])
                             (cond
@@ -322,7 +297,7 @@
                                    (datum->syntax val (cons (defend-method-def (car v)) (defend-method-def (cdr v))) val val)
                                    val)
                                  val)]))))
-                    #'make-methods-lambda)
+                    #'make-methods-lambda))
                  (quote b) (quote #f))))
               outer-class-name))
              stx))
@@ -573,6 +548,141 @@
         [_
          stx])))
   (values (reverse (unbox rev-extra-def*)) rewritten-stx))
+
+;; TODO copied from check-class-unit
+(define (construct-local-mapping-tables stx)
+  (syntax-parse stx
+    #:literal-sets (kernel-literals)
+    #:literals (values)
+    ;; See base-env/class-prims.rkt to see how this in-syntax
+    ;; table is constructed at the surface syntax
+    ;;
+    ;; FIXME: factor out with syntax classes
+    [(let-values ([(method:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-this-escapes)))
+                      (#%plain-app (#%plain-app local-method:id _) _))
+                    ...)]
+                  [(private:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-this-escapes)))
+                      (#%plain-app local-private:id _))
+                    ...)]
+                  [(field:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-field-use) _))
+                      (let-values (((_) _)) (#%plain-app local-field-get:id _))
+                      (begin
+                        (quote ((~datum declare-field-assignment) _))
+                        (let-values (((_) _))
+                          (let-values (((_) _)) (#%plain-app local-field-set:id _ _)))))
+                    ...)]
+                  [(private-field:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-field-use) _))
+                      (let-values (((_) _)) (#%plain-app local-private-get:id _))
+                      (begin
+                        (quote ((~datum declare-field-assignment) _))
+                        (let-values (((_) _))
+                          (let-values (((_) _)) (#%plain-app local-private-set:id _ _)))))
+                    ...)]
+                  [(inherit-field:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-inherit-use) _))
+                      (let-values (((_) _)) (#%plain-app local-inherit-get:id _))
+                      (let-values (((_) _))
+                        (let-values (((_) _)) (#%plain-app local-inherit-set:id _ _))))
+                    ...)]
+                  [(init:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      ;; check-not-unsafe-undefined
+                      (#%plain-app _ local-init:id _)) ...)]
+                  [(init-rest:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      ;; check-not-unsafe-undefined
+                      (#%plain-app _ local-init-rest:id _)) ...)]
+                  [(inherit:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-this-escapes)))
+                      (#%plain-app (#%plain-app local-inherit:id _) _))
+                    ...)]
+                  [(override:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-this-escapes)))
+                      (#%plain-app (#%plain-app local-override:id _) _)
+                      (quote ((~datum declare-this-escapes)))
+                      (#%plain-app local-super:id _))
+                    ...)]
+                  [(augment:id ...)
+                   (#%plain-app
+                    values
+                    (#%plain-lambda ()
+                      (quote ((~datum declare-this-escapes)))
+                      (~or (#%plain-app local-augment:id _)
+                           (#%plain-app (#%plain-app local-augment:id _) _))
+                      (quote ((~datum declare-this-escapes)))
+                      (let-values ([(_) (#%plain-app local-inner:id _)])
+                        (if _ (#%plain-app _ _) _)))
+                    ...)])
+       (#%plain-app void))
+     (values (map cons
+                  (append (syntax->datum #'(method ...))
+                          (syntax->datum #'(override ...)))
+                  (append (syntax->list #'(local-method ...))
+                          (syntax->list #'(local-override ...))))
+             (map cons
+                  (syntax->datum #'(private ...))
+                  (syntax->list #'(local-private ...)))
+             (map list
+                  (syntax->datum #'(field ...))
+                  (syntax->list #'(local-field-get ...))
+                  (syntax->list #'(local-field-set ...)))
+             (map list
+                  (syntax->datum #'(private-field ...))
+                  (syntax->list #'(local-private-get ...))
+                  (syntax->list #'(local-private-set ...)))
+             (map cons
+                  (syntax->datum #'(init ...))
+                  (syntax->list #'(local-init ...)))
+             ;; this should only be a singleton list or null
+             (map cons
+                  (syntax->datum #'(init-rest ...))
+                  (syntax->list #'(local-init-rest ...)))
+             (map cons
+                  (syntax->datum #'(inherit ...))
+                  (syntax->list #'(local-inherit ...)))
+             (map list
+                  (syntax->datum #'(inherit-field ...))
+                  (syntax->list #'(local-inherit-get ...))
+                  (syntax->list #'(local-inherit-set ...)))
+             (map cons
+                  (syntax->datum #'(override ...))
+                  (syntax->list #'(local-super ...)))
+             (map cons
+                  (syntax->datum #'(augment ...))
+                  (syntax->list #'(local-augment ...)))
+             (map cons
+                  (syntax->datum #'(augment ...))
+                  (syntax->list #'(local-inner ...))))]))
+;; END
 
 (define (with-extended-env tvarss-list thunk)
   (define ns (flatten tvarss-list))
@@ -1055,6 +1165,10 @@
   ;; TODO cdar cadr caddr ... curry? I guess point to 
   (syntax-parse app-stx
    #:literals (#%plain-app #%expression apply quote)
+   [(#%plain-app ff:id obj:id)
+    #:do [(define field-info (assoc #'ff (current-field-accessor*) free-identifier=?))]
+    #:when field-info
+    (values (cons 'object-field (cdr field-info)) #'obj)]
    ;; --- pair
    [(#%plain-app (~or (~literal car)
                       (~literal unsafe-car)) x)
