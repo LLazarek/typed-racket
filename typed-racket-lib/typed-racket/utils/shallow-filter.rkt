@@ -55,7 +55,7 @@
     (define ty-pred
       ;; ... unit-tests/contract-tests.rkt
       (let* ((ctc-fail (lambda (#:reason r) (raise-user-error 'type->flat-contract "failed to convert type ~a to flat contract because ~a" ty-path r)))
-             (defs+ctc-stx (type->contract ty-path ctc-fail #:typed-side #f #:cache #f #:enforcement-mode 'transient)))
+             (defs+ctc-stx (type->contract ty-path ctc-fail #:typed-side #f #:cache #f #:enforcement-mode 'shallow)))
         (eval #`(let () #,@(car defs+ctc-stx) #,(cadr defs+ctc-stx)) ns)))
     (ty-pred val)))
 
