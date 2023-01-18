@@ -56,12 +56,19 @@
     racket/base)
   (for-template
     racket/base
+    racket/list
+    racket/sequence
+    racket/stream
+    racket/set
     (only-in racket/contract/base any/c) ;; for free-id test, to avoid rewrites
     racket/unsafe/ops
     (only-in racket/unsafe/undefined unsafe-undefined)
     typed-racket/types/numeric-predicates
     typed-racket/utils/shallow-contract
-    (only-in racket/private/class-internal find-method/who get-field/proc)
+    (only-in racket/private/class-internal
+             find-method/who
+             get-field/proc
+             do-make-object)
     (only-in typed-racket/private/class-literals class-internal)))
 
 (define current-field-accessor* (make-parameter '()))
