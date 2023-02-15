@@ -1060,20 +1060,36 @@
                        (let-values ([(obj-id) obj-e])
                          (let-values (((meth-id) meth-e))
                            (let-values send-arg*-stx body))))
-                    (with-syntax ([ctc (car ctc-stx*)]
-                                  [ty-datum (type->transient-sexp (car t*))]
-                                  [ctx ctx]
-                                  [i 0])
+                    (with-syntax ([v*
+                                   (for/list ([_t (in-list t*)])
+                                     (generate-temporary var-name))])
                       (quasisyntax/loc app-stx
-                                      (let-values ([(meth-sym-v) meth-sym-e])
-                                         (let-values ([(obj-id) obj-e])
-                                           (let-values (((meth-id) meth-e))
-                                             (let-values send-arg*-stx
-                                               (#%plain-app shallow-shape-check body ctc 'ty-datum 'ctx
-                                                  (#%plain-app cons #,blame-id
-                                                                    #,(with-syntax ((blame-sym (car blame-sym))
-                                                                                    (meth-id (cdr blame-sym)))
-                                                                           #`(#%plain-app cons 'blame-sym (#%plain-app cons meth-id 'i)))))))))))])]
+                        (let-values ([(meth-sym-v) meth-sym-e])
+                          (let-values ([(obj-id) obj-e])
+                            (let-values (((meth-id) meth-e))
+                              (let-values send-arg*-stx
+                                (let-values ([v* body])
+                                  (begin
+                                    #,@(for/list ([ctc-stx (in-list ctc-stx*)]
+                                                  [type (in-list t*)]
+                                                  [v-stx (in-list (syntax-e #'v*))]
+                                                  [i (in-naturals)]
+                                                  #:when ctc-stx)
+                                         (define if-stx
+                                           (with-syntax ([ctc ctc-stx]
+                                                         [v v-stx]
+                                                         [ty-datum (type->transient-sexp type)]
+                                                         [ctx ctx]
+                                                         [i i])
+                                             (quasisyntax/loc app-stx
+                                               (#%plain-app shallow-shape-check v ctc 'ty-datum 'ctx
+                                                            (#%plain-app cons #,blame-id
+                                                                         #,(with-syntax ((blame-sym (car blame-sym))
+                                                                                         (meth-id (cdr blame-sym)))
+                                                                             #`(#%plain-app cons 'blame-sym (#%plain-app cons meth-id 'i))))))))
+                                         (register-ignored! if-stx)
+                                         if-stx)
+                                    #,(quasisyntax/loc app-stx (#%plain-app values . v*))))))))))])]
                  [else
                   (with-syntax ([v*
                                  (for/list ([_t (in-list t*)])
